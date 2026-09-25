@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Build artifacts (wheel + AI Runtime code archive; rebuilt by DABs on deploy)
+dist/
+
+# DABs
+.databricks/
+
+# Local scratch
+.isaac/
+*.local.yml
+mlflow.db

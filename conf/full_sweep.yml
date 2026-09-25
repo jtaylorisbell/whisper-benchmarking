@@ -1,0 +1,39 @@
+# Full sweep — TEMPLATE. Finalize the exact grid together after the smoke test confirms plumbing
+# and per-config costs. Runs the FULL test-clean split (no dataset.limit). Uncomment/trim the runs
+# you want; each `runs` entry is one benchmarked point. Keep it a curated grid, not a blind
+# cross-product, to control spend.
+catalog: classic_stable_h0vpq7_catalog
+schema: whisper_bench
+volume: audio
+model: openai/whisper-large-v3
+rate_catalog_version: "2026-09-23.1"
+warmup_clips: 5
+
+dataset:
+  name: librispeech_test_clean
+  hf_dataset: openslr/librispeech_asr
+  hf_config: clean
+  hf_split: test
+  # limit: null   -> full ~2,620 clips / ~5.4 hrs (capped validation pass complete)
+
+runs:
+  # ---------- AI Runtime arm: batch_size on a single A10 (serverless GPU via ai_runtime_task) ----------
+  # batch_size is the utilization lever. NOTE: whisper-large-v3 pads every clip to a 30s mel window,
+  # so GPU memory scales with batch. Under the HF transformers pipeline (fp16), batch 8 is the
+  # largest that fits on a 24GB A10; batch 16 was observed to OOM. batch 32 was not tested (the run
+  # failed at 16 first) — inferred to also OOM since it's strictly larger. A more memory-efficient
+  # runtime (e.g. faster-whisper/CTranslate2) could likely run larger batches.
+  - {arm: ai_runtime, gpu_type: A10, batch_size: 1, serverless_accelerator: GPU_1xA10, compute: serverless_gpu_a10}
+  - {arm: ai_runtime, gpu_type: A10, batch_size: 4, serverless_accelerator: GPU_1xA10, compute: serverless_gpu_a10}
+  - {arm: ai_runtime, gpu_type: A10, batch_size: 8, serverless_accelerator: GPU_1xA10, compute: serverless_gpu_a10}
+
+  # ---------- Model Serving arm: single A10 (GPU_MEDIUM, workload_size Small = 1 replica) ----------
+  # ONE GPU for every row (replicas = provisioned_concurrency/4; Small = 4 = 1 replica), so the $
+  # basis is a clean single A10 directly comparable to the AI Runtime rows above.
+  # Lever = CONCURRENCY (parallel single-clip requests). batch_size stays 1: the whisper_large_v3
+  # endpoint returns one transcription per request — packing multiple clips into one request collapses
+  # to a single result (verified), so client-side batching isn't usable. Concurrency held <= 4 (one
+  # replica serves up to 4 concurrent; >4 would need more replicas = more GPUs = a scale-out study).
+  - {arm: serving, gpu_type: A10, batch_size: 1, concurrency: 1, endpoint_name: whisper_bench_a10, workload_type: GPU_MEDIUM, workload_size: Small, compute: serving_gpu_medium, orchestration_compute: orchestration_serverless_jobs}   # single-stream baseline (ai_query-style)
+  - {arm: serving, gpu_type: A10, batch_size: 1, concurrency: 2, endpoint_name: whisper_bench_a10, workload_type: GPU_MEDIUM, workload_size: Small, compute: serving_gpu_medium, orchestration_compute: orchestration_serverless_jobs}
+  - {arm: serving, gpu_type: A10, batch_size: 1, concurrency: 4, endpoint_name: whisper_bench_a10, workload_type: GPU_MEDIUM, workload_size: Small, compute: serving_gpu_medium, orchestration_compute: orchestration_serverless_jobs}   # saturates the single replica

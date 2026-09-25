@@ -1,0 +1,18 @@
+# Deletes the GPU serving endpoint(s) when the serving sweep is done (stops billing).
+resources:
+  jobs:
+    whisper_serving_teardown:
+      name: "[whisper-bench] Model Serving teardown"
+      tasks:
+        - task_key: teardown_serving
+          notebook_task:
+            notebook_path: ../notebooks/22_teardown_serving.py
+            base_parameters:
+              config: ${workspace.file_path}/conf/${var.config_name}
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "3"
+            dependencies:
+              - ../dist/*.whl

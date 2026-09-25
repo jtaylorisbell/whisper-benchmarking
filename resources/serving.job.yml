@@ -1,0 +1,34 @@
+# Model Serving arm — deploy the GPU endpoint(s) then run the concurrent benchmark.
+# Two serverless notebook tasks in sequence; the wheel is installed via the job environment.
+resources:
+  jobs:
+    whisper_serving_bench:
+      name: "[whisper-bench] Model Serving arm"
+      tasks:
+        - task_key: deploy_serving
+          notebook_task:
+            notebook_path: ../notebooks/20_deploy_serving.py
+            base_parameters:
+              config: ${workspace.file_path}/conf/${var.config_name}
+              model: ${var.serving_model}
+              default_version: ${var.serving_model_version}
+          environment_key: default
+
+        - task_key: run_serving
+          depends_on:
+            - task_key: deploy_serving
+          notebook_task:
+            notebook_path: ../notebooks/21_run_serving.py
+            base_parameters:
+              config: ${workspace.file_path}/conf/${var.config_name}
+              rate_catalog: ${workspace.file_path}/conf/compute_costs.yml
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "3"
+            dependencies:
+              - ../dist/*.whl

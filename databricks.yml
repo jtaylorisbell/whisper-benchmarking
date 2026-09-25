@@ -1,0 +1,65 @@
+# Databricks Asset Bundle — Whisper batch-inference benchmark.
+# Deploy:  databricks bundle deploy -t dev -p fevm-aws
+# Auth is OAuth U2M via the `fevm-aws` profile (never PATs).
+bundle:
+  name: whisper-bench
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog for the benchmark schema/volume/tables.
+    default: classic_stable_h0vpq7_catalog
+  schema:
+    description: Schema holding results tables + the audio Volume.
+    default: whisper_bench
+  volume:
+    description: UC Volume for the dataset Parquet and result JSONs.
+    default: audio
+  warehouse_id:
+    description: SQL warehouse id (only used if a task needs SQL).
+    default: 78f5fbbe7fc2c03c
+  config_name:
+    description: Which suite config to run (smoke.yml or full_sweep.yml).
+    default: smoke.yml
+  serving_model:
+    description: Unity Catalog model served on the GPU endpoint.
+    default: system.ai.whisper_large_v3
+  serving_model_version:
+    description: Version of the serving model to deploy.
+    default: "3"
+
+artifacts:
+  # Python wheel with the shared whisper_bench library (used by the serverless notebook tasks).
+  wheel:
+    type: whl
+    build: uv build --wheel
+    path: .
+  # Code archive unpacked on each AI Runtime node and exposed via $CODE_SOURCE_PATH.
+  # Packaged under a single top-level `code/` dir (AI Runtime sets CODE_SOURCE_PATH to the archive's
+  # first entry, so a single deterministic root is required). COPYFILE_DISABLE + --exclude strip
+  # macOS AppleDouble `._*` files, which otherwise sort first and get picked as the (invalid) root.
+  code:
+    type: tgz
+    path: .
+    build: rm -rf dist/code && mkdir -p dist/code && cp -R src airuntime conf dist/code/ && COPYFILE_DISABLE=1 tar --exclude '._*' -czf dist/code.tgz -C dist code && rm -rf dist/code
+    files:
+      - source: ./dist/code.tgz
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # Disable the "[dev user] " name prefix: it's injected into the ai_runtime_task MLflow
+    # experiment path too, and brackets/spaces are illegal in experiment names.
+    presets:
+      name_prefix: ""
+    workspace:
+      host: https://fevm-classic-stable-h0vpq7.cloud.databricks.com
+      profile: fevm-aws
+  prod:
+    mode: production
+    workspace:
+      host: https://fevm-classic-stable-h0vpq7.cloud.databricks.com
+      profile: fevm-aws

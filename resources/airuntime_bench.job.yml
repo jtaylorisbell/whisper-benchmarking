@@ -1,0 +1,40 @@
+# AI Runtime (serverless GPU) arm — runs the HF Whisper pipeline as an ai_runtime_task.
+# The code archive (artifact `code`) is unpacked to $CODE_SOURCE_PATH; command.sh runs the entry
+# script, which transcribes the configs matching this deployment's accelerator and emits result
+# JSONs to the Volume. AI Runtime passes no job parameters, so config/GPU come from command.sh env.
+#
+# NOTE: AI Runtime is Public Preview; if this workspace isn't entitled, deploy/run will surface it.
+# Add more `deployments` (or duplicate this job per accelerator) to sweep GPU types.
+resources:
+  jobs:
+    whisper_airuntime_bench:
+      name: "[whisper-bench] AI Runtime arm"
+      tasks:
+        - task_key: airuntime_a10
+          environment_key: default
+          ai_runtime_task:
+            # `experiment` is a bare name (no slashes); the directory is separate.
+            experiment: whisper-bench-airuntime
+            mlflow_experiment_directory: /Workspace/Users/${workspace.current_user.userName}
+            # Point at the artifact's local output; DABs uploads it and rewrites this to the
+            # workspace path on `bundle deploy` (same mechanism as `whl:` library paths).
+            code_source_path: ./dist/code.tgz
+            deployments:
+              - name: whisper-a10
+                command_path: ${workspace.file_path}/airuntime/command.sh
+                compute:
+                  accelerator_type: GPU_1xA10
+                  accelerator_count: 1
+      environments:
+        # The serverless base env does NOT ship the ML stack, so declare it explicitly. torch's
+        # PyPI Linux wheel bundles its own CUDA runtime, so it runs on the GPU node as-is. The arm
+        # reads clips from the Volume Parquet (pandas/pyarrow via the wheel), so `datasets` is not
+        # needed here (only prep needs it). The wheel adds whisper_bench + jiwer/soundfile/normalizer.
+        - environment_key: default
+          spec:
+            environment_version: "6"
+            dependencies:
+              - ../dist/*.whl
+              - torch
+              - transformers
+              - accelerate

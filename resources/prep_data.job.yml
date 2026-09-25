@@ -1,0 +1,25 @@
+# One-time (idempotent) dataset prep: LibriSpeech -> single Parquet on the UC Volume.
+# Serverless notebook task; the wheel is installed via the job environment.
+resources:
+  jobs:
+    whisper_prep_data:
+      name: "[whisper-bench] prep data"
+      tasks:
+        - task_key: prep_data
+          notebook_task:
+            notebook_path: ../notebooks/00_prep_data.py
+            base_parameters:
+              config: ${workspace.file_path}/conf/${var.config_name}
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              volume: ${var.volume}
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "3"
+            dependencies:
+              - ../dist/*.whl
+              # datasets isn't in the standard serverless env (only AI Runtime v6 ships it);
+              # prep needs it to stream LibriSpeech. soundfile comes via the wheel.
+              - datasets

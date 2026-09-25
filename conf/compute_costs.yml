@@ -1,0 +1,65 @@
+# =============================================================================
+# Compute rate catalog — the single, documented source of $/hr for cost math.
+# =============================================================================
+# Cost in the results table = measured inference seconds  ×  effective_usd_per_hour(compute).
+# Each rate is itemized so every dollar is auditable:
+#     effective_usd_per_hour = dbus_per_hour * usd_per_dbu  (+ cloud_usd_per_hour for classic)
+#
+# PROVENANCE (captured 2026-09-23, workspace fevm-classic-stable-h0vpq7, AWS us-east-1):
+#   * usd_per_dbu  -> LIVE from system.billing.usage's price table:
+#         system.billing.list_prices.pricing.effective_list  (price_end_time IS NULL)
+#       Verified values (Enterprise tier, us-east-1):
+#         Model Serving  (ENTERPRISE_SERVERLESS_REAL_TIME_INFERENCE_US_EAST_N_VIRGINIA) = 0.070
+#         Serverless GPU (ENTERPRISE_MODEL_TRAINING_SERVERLESS_GPU_COMPUTE_PROVISIONED_CAPACITY) = 1.000
+#         Serverless Jobs(ENTERPRISE_JOBS_SERVERLESS_COMPUTE_US_EAST_N_VIRGINIA) = 0.450
+#       Serving & serverless-GPU $/DBU are identical across Premium/Enterprise; only the jobs rate
+#       differs (Premium us-east-1 = 0.350). Re-pull anytime with cost.refresh_usd_per_dbu().
+#   * dbus_per_hour -> Databricks published rates (docs.databricks.com/.../model-serving/serve-custom-llms
+#       and AI Runtime pricing). Marked `verify: docs` below. These are a FIXED property of each
+#       compute size, so reading/confirming them from a billing window does NOT reintroduce setup
+#       skew — we still apply them only to our self-measured inference seconds. Calibrate against a
+#       real tagged billing window before quoting absolute $ externally (see README "Calibrating rates").
+#   * cloud_usd_per_hour -> AWS EC2 on-demand list (classic compute only).
+#
+# NOTE: relative comparisons across batch_size / concurrency on the SAME compute are exact
+# regardless of rate precision; only cross-compute absolute $ depends on dbus_per_hour accuracy.
+# -----------------------------------------------------------------------------
+version: "2026-09-23.1"
+source: "system.billing.list_prices snapshot (AWS us-east-1, Enterprise) + Databricks published DBU/hr + AWS EC2 on-demand"
+
+rates:
+  # --- Model Serving (GPU endpoint) — billed as Serverless Real-Time Inference @ $0.07/DBU ---
+  serving_gpu_medium:
+    description: "Model Serving GPU_MEDIUM (1x A10)"
+    databricks_sku: "ENTERPRISE_SERVERLESS_REAL_TIME_INFERENCE_US_EAST_N_VIRGINIA"
+    usd_per_dbu: 0.070
+    dbus_per_hour: 20.0        # verify: docs (serve-custom-llms)
+  serving_gpu_large:
+    description: "Model Serving GPU_LARGE (1x A100 80GB)"
+    databricks_sku: "ENTERPRISE_SERVERLESS_REAL_TIME_INFERENCE_US_EAST_N_VIRGINIA"
+    usd_per_dbu: 0.070
+    dbus_per_hour: 78.5        # verify: docs (8x A100 = 628 DBU/hr ÷ 8)
+  serving_gpu_xlarge:
+    description: "Model Serving GPU_XLARGE (1x H100)"
+    databricks_sku: "ENTERPRISE_SERVERLESS_REAL_TIME_INFERENCE_US_EAST_N_VIRGINIA"
+    usd_per_dbu: 0.070
+    dbus_per_hour: 100.0       # verify: docs
+
+  # --- AI Runtime serverless GPU — provisioned GPU compute @ $1.00/DBU ---
+  serverless_gpu_a10:
+    description: "Serverless GPU / AI Runtime, 1x A10 (GPU_1xA10)"
+    databricks_sku: "ENTERPRISE_MODEL_TRAINING_SERVERLESS_GPU_COMPUTE_PROVISIONED_CAPACITY"
+    usd_per_dbu: 1.000
+    dbus_per_hour: 2.5         # verify: docs ($2.50/GPU-hr list ÷ $1.00/DBU)
+  serverless_gpu_h100:
+    description: "Serverless GPU / AI Runtime, 1x H100 (GPU_1xH100)"
+    databricks_sku: "ENTERPRISE_MODEL_TRAINING_SERVERLESS_GPU_COMPUTE_PROVISIONED_CAPACITY"
+    usd_per_dbu: 1.000
+    dbus_per_hour: 7.0         # verify: docs ($7.00/GPU-hr list ÷ $1.00/DBU)
+
+  # --- Orchestration / driver job for the serving arm (issues the concurrent requests) ---
+  orchestration_serverless_jobs:
+    description: "Serverless Jobs compute driving serving requests (single lightweight task)"
+    databricks_sku: "ENTERPRISE_JOBS_SERVERLESS_COMPUTE_US_EAST_N_VIRGINIA"
+    usd_per_dbu: 0.450
+    dbus_per_hour: 2.0         # verify: serverless jobs DBU/hr for a minimal driver (calibrate)

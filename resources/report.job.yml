@@ -1,0 +1,20 @@
+# Report — ingest emitted result JSONs into the documented Delta tables + leaderboard view.
+# Serverless notebook task (has Spark). Re-runnable; safe to run after either/both arms.
+resources:
+  jobs:
+    whisper_report:
+      name: "[whisper-bench] report"
+      tasks:
+        - task_key: report
+          notebook_task:
+            notebook_path: ../notebooks/30_report.py
+            base_parameters:
+              config: ${workspace.file_path}/conf/${var.config_name}
+              rate_catalog: ${workspace.file_path}/conf/compute_costs.yml
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "3"
+            dependencies:
+              - ../dist/*.whl

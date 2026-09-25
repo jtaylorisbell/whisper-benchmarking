@@ -1,0 +1,39 @@
+# Smoke config: ONE cheap end-to-end run per arm on a small subset, to validate the whole
+# harness (data -> inference -> metrics -> accuracy -> self-computed cost -> results tables)
+# before spending on the full sweep. Both arms share model, dataset, and clip subset so their
+# WER/CER must match — that's the parity check.
+catalog: classic_stable_h0vpq7_catalog
+schema: whisper_bench
+volume: audio
+model: openai/whisper-large-v3
+rate_catalog_version: "2026-09-23.1"
+warmup_clips: 3
+
+dataset:
+  name: librispeech_test_clean
+  hf_dataset: openslr/librispeech_asr
+  hf_config: clean
+  hf_split: test
+  limit: 100            # smoke subset; full test-clean (~2620) when limit is removed
+
+runs:
+  # --- AI Runtime arm: HF pipeline on serverless GPU (A10), run via an ai_runtime_task.
+  - arm: ai_runtime
+    gpu_type: A10
+    batch_size: 8
+    serverless_accelerator: GPU_1xA10
+    compute: serverless_gpu_a10
+
+  # --- Model Serving arm: GPU_MEDIUM (A10) endpoint from system.ai.whisper_large_v3.
+  #     Single replica (Small = provisioned concurrency 4). batch_size = clips per request (the
+  #     swept lever); client concurrency <= 4 (one replica serves up to 4 concurrent).
+  - arm: serving
+    gpu_type: A10
+    batch_size: 8                 # clips per request (confirmed: signature accepts an array)
+    concurrency: 4
+    endpoint_name: whisper_bench_a10
+    workload_type: GPU_MEDIUM
+    workload_size: Small
+    scale_to_zero: false
+    compute: serving_gpu_medium
+    orchestration_compute: orchestration_serverless_jobs
