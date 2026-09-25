@@ -51,14 +51,26 @@ def test_overrides_apply_and_are_validated():
 def test_labels_autoderive():
     ai = RunConfig(arm=ARM_AI_RUNTIME, gpu_type="A10", batch_size=16, compute="serverless_gpu_a10")
     assert ai.label == "ai_runtime-A10-bs16"
+    fw = RunConfig(arm=ARM_AI_RUNTIME, gpu_type="A10", batch_size=1, engine="faster_whisper",
+                   compute="serverless_gpu_a10")
+    assert fw.label == "ai_runtime-fw-A10-bs1"
     sv = RunConfig(arm=ARM_SERVING, gpu_type="H100", concurrency=8, batch_size=1,
                    compute="serving_gpu_xlarge", orchestration_compute="orchestration_serverless_jobs")
     assert sv.label == "serving-H100-c8-bs1"
 
 
+def test_faster_whisper_config_loads():
+    suite = load_suite(CONF / "faster_whisper.yml")
+    assert len(suite.runs) == 1
+    r = suite.runs[0]
+    assert r.arm == ARM_AI_RUNTIME and r.engine == "faster_whisper"
+
+
 def test_bad_configs_raise():
     with pytest.raises(ValueError):
         RunConfig(arm="nonsense", gpu_type="A10", compute="x")
+    with pytest.raises(ValueError):
+        RunConfig(arm=ARM_AI_RUNTIME, gpu_type="A10", compute="serverless_gpu_a10", engine="bogus")
     with pytest.raises(ValueError):
         RunConfig(arm=ARM_AI_RUNTIME, gpu_type="A10", compute="")  # missing compute
     with pytest.raises(ValueError):

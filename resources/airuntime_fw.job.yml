@@ -1,0 +1,29 @@
+# AI Runtime arm, faster-whisper (CTranslate2) engine. Separate job from the HF arm so its env can
+# carry ctranslate2 + the NVIDIA CUDA libs without touching the HF job. Runs conf/faster_whisper.yml.
+resources:
+  jobs:
+    whisper_airuntime_fw_bench:
+      name: "[whisper-bench] AI Runtime arm (faster-whisper)"
+      tasks:
+        - task_key: airuntime_fw_a10
+          environment_key: default
+          ai_runtime_task:
+            experiment: whisper-bench-airuntime-fw
+            mlflow_experiment_directory: /Workspace/Users/${workspace.current_user.userName}
+            code_source_path: ./dist/code.tgz
+            deployments:
+              - name: whisper-fw-a10
+                command_path: ${workspace.file_path}/airuntime/command_fw.sh
+                compute:
+                  accelerator_type: GPU_1xA10
+                  accelerator_count: 1
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "6"
+            dependencies:
+              - ../dist/*.whl
+              - faster-whisper
+              # ctranslate2 CUDA lib linkage — see command_fw.sh (LD_LIBRARY_PATH setup).
+              - nvidia-cublas-cu12
+              - nvidia-cudnn-cu12

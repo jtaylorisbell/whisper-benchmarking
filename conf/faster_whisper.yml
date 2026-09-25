@@ -1,0 +1,19 @@
+# faster-whisper (CTranslate2) engine on AI Runtime serverless GPU — same weights (large-v3),
+# same dataset, same A10 as the HF-pipeline arm. Isolates the engine as a throughput lever.
+# Sequential transcription (the probe-proven path); cross-clip batching left as future headroom.
+catalog: classic_stable_h0vpq7_catalog
+schema: whisper_bench
+volume: audio
+model: openai/whisper-large-v3
+rate_catalog_version: "2026-09-23.1"
+warmup_clips: 5
+
+dataset:
+  name: librispeech_test_clean
+  hf_dataset: openslr/librispeech_asr
+  hf_config: clean
+  hf_split: test
+  # limit: null -> full ~2,620 clips / ~5.4 hrs (set a limit for a capped validation pass)
+
+runs:
+  - {arm: ai_runtime, engine: faster_whisper, gpu_type: A10, batch_size: 1, serverless_accelerator: GPU_1xA10, compute: serverless_gpu_a10}

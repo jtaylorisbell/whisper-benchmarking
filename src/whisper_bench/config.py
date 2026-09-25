@@ -74,6 +74,8 @@ class RunConfig:
 
     # --- AI Runtime compute detail (serverless GPU via ai_runtime_task) ---
     serverless_accelerator: Optional[str] = None  # e.g. "GPU_1xA10", "GPU_1xH100"
+    engine: str = "hf"  # ai_runtime inference engine: "hf" (transformers) | "faster_whisper" (CTranslate2)
+    fw_model: Optional[str] = None  # faster_whisper model id override; None = derived from suite.model
 
     # --- Serving detail ---
     endpoint_name: Optional[str] = None
@@ -91,9 +93,12 @@ class RunConfig:
             raise ValueError(f"run {self.label or self.arm!r} is missing a 'compute' rate key")
         if self.arm == ARM_SERVING and not self.orchestration_compute:
             raise ValueError("serving runs must set 'orchestration_compute' (the driver job pays too)")
+        if self.engine not in ("hf", "faster_whisper"):
+            raise ValueError(f"engine must be 'hf' or 'faster_whisper', got {self.engine!r}")
         if self.label is None:
             if self.arm == ARM_AI_RUNTIME:
-                self.label = f"ai_runtime-{self.gpu_type}-bs{self.batch_size}"
+                eng = "" if self.engine == "hf" else "-fw"
+                self.label = f"ai_runtime{eng}-{self.gpu_type}-bs{self.batch_size}"
             else:
                 self.label = f"serving-{self.gpu_type}-c{self.concurrency}-bs{self.batch_size}"
 
