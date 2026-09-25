@@ -24,8 +24,8 @@
 # NOTE: relative comparisons across batch_size / concurrency on the SAME compute are exact
 # regardless of rate precision; only cross-compute absolute $ depends on dbus_per_hour accuracy.
 # -----------------------------------------------------------------------------
-version: "2026-09-23.1"
-source: "system.billing.list_prices snapshot (AWS us-east-1, Enterprise) + Databricks published DBU/hr + AWS EC2 on-demand"
+version: "2026-09-25.1"
+source: "list_prices $/DBU (AWS us-east-1, Enterprise); AI Runtime A10 DBU/hr calibrated against system.billing.usage; serving DBU/hr still Databricks-published"
 
 rates:
   # --- Model Serving (GPU endpoint) — billed as Serverless Real-Time Inference @ $0.07/DBU ---
@@ -45,17 +45,23 @@ rates:
     usd_per_dbu: 0.070
     dbus_per_hour: 100.0       # verify: docs
 
-  # --- AI Runtime serverless GPU — provisioned GPU compute @ $1.00/DBU ---
+  # --- AI Runtime serverless GPU ---
+  # CALIBRATED against system.billing.usage (2026-09-25): AI Runtime bills under
+  # ENTERPRISE_MODEL_TRAINING_US_EAST_N_VIRGINIA (billing_origin_product=AI_RUNTIME) @ $0.65/DBU —
+  # NOT the ...SERVERLESS_GPU_COMPUTE_PROVISIONED_CAPACITY SKU originally guessed. DBU/hr for 1x A10
+  # measured from an isolated run: 1.128 DBUs / 0.312 provisioned-hr = ~3.6 DBU/hr -> ~$2.35/hr.
+  # NOTE: custom_tags/job_id do NOT propagate to AI Runtime billing, so this was attributed by
+  # isolated-workspace + time-window, not tags.
   serverless_gpu_a10:
     description: "Serverless GPU / AI Runtime, 1x A10 (GPU_1xA10)"
-    databricks_sku: "ENTERPRISE_MODEL_TRAINING_SERVERLESS_GPU_COMPUTE_PROVISIONED_CAPACITY"
-    usd_per_dbu: 1.000
-    dbus_per_hour: 2.5         # verify: docs ($2.50/GPU-hr list ÷ $1.00/DBU)
+    databricks_sku: "ENTERPRISE_MODEL_TRAINING_US_EAST_N_VIRGINIA"
+    usd_per_dbu: 0.650         # measured: list_prices effective_list (AI_RUNTIME SKU)
+    dbus_per_hour: 3.6         # measured: isolated fw run (~3.6 DBU/hr); small-sample, ±~15%
   serverless_gpu_h100:
     description: "Serverless GPU / AI Runtime, 1x H100 (GPU_1xH100)"
-    databricks_sku: "ENTERPRISE_MODEL_TRAINING_SERVERLESS_GPU_COMPUTE_PROVISIONED_CAPACITY"
-    usd_per_dbu: 1.000
-    dbus_per_hour: 7.0         # verify: docs ($7.00/GPU-hr list ÷ $1.00/DBU)
+    databricks_sku: "ENTERPRISE_MODEL_TRAINING_US_EAST_N_VIRGINIA"
+    usd_per_dbu: 0.650         # same SKU as A10 (measured); H100 DBU/hr below NOT yet measured
+    dbus_per_hour: 10.0        # verify: UNMEASURED (never ran H100) — placeholder, calibrate before use
 
   # --- Orchestration / driver job for the serving arm (issues the concurrent requests) ---
   orchestration_serverless_jobs:

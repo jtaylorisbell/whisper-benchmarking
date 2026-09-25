@@ -29,10 +29,10 @@ def test_catalog_matches_known_rates():
     cat = RateCatalog.load(CONF / "compute_costs.yml")
     # serving A10 = 20 DBU/hr * $0.07 = $1.40/hr
     assert cat.usd_per_hour("serving_gpu_medium") == pytest.approx(1.40)
-    # serverless GPU A10 = 2.5 DBU/hr * $1.00 = $2.50/hr
-    assert cat.usd_per_hour("serverless_gpu_a10") == pytest.approx(2.50)
-    # serverless GPU H100 = 7.0 * $1.00 = $7.00/hr
-    assert cat.usd_per_hour("serverless_gpu_h100") == pytest.approx(7.00)
+    # serverless GPU A10 = 3.6 DBU/hr * $0.65 = $2.34/hr (calibrated vs billing)
+    assert cat.usd_per_hour("serverless_gpu_a10") == pytest.approx(2.34)
+    # serverless GPU H100 = 10.0 * $0.65 = $6.50/hr (H100 DBU/hr still a placeholder)
+    assert cat.usd_per_hour("serverless_gpu_h100") == pytest.approx(6.50)
     with pytest.raises(KeyError):
         cat.usd_per_hour("does_not_exist")
 
