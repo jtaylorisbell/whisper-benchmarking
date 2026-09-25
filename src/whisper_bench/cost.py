@@ -81,6 +81,53 @@ def cost_per_audio_hour(total_cost_usd: float, total_audio_sec: float) -> float:
     return total_cost_usd / audio_hours
 
 
+@dataclass
+class CostBreakdown:
+    """The cost fields for one run, derived from measured time + a rate catalog. Single source of
+    truth for how a run's dollars are assembled (used by both live runs and historical recompute)."""
+
+    rate_primary_usd_per_hr: float
+    cost_primary_usd: float
+    rate_secondary_usd_per_hr: Optional[float]
+    cost_secondary_usd: Optional[float]
+    total_cost_usd: float
+    cost_per_audio_hour: float
+    rate_catalog_version: str
+
+
+def assemble_costs(
+    catalog: RateCatalog,
+    compute_primary: str,
+    compute_secondary: Optional[str],
+    inference_wall_sec: float,
+    total_audio_sec: float,
+    replicas: int = 1,
+) -> CostBreakdown:
+    """Turn measured inference time + compute keys into the full cost breakdown.
+
+    Primary compute (AI Runtime GPU, or serving endpoint) is billed at ``replicas`` × rate; the
+    optional secondary compute (serving orchestration job) is billed over the same inference window.
+    """
+    primary_rate = catalog.usd_per_hour(compute_primary)
+    primary_cost = compute_cost(inference_wall_sec, primary_rate, replicas=replicas)
+
+    secondary_rate = secondary_cost = None
+    if compute_secondary:
+        secondary_rate = catalog.usd_per_hour(compute_secondary)
+        secondary_cost = compute_cost(inference_wall_sec, secondary_rate)
+
+    total = primary_cost + (secondary_cost or 0.0)
+    return CostBreakdown(
+        rate_primary_usd_per_hr=primary_rate,
+        cost_primary_usd=primary_cost,
+        rate_secondary_usd_per_hr=secondary_rate,
+        cost_secondary_usd=secondary_cost,
+        total_cost_usd=total,
+        cost_per_audio_hour=cost_per_audio_hour(total, total_audio_sec),
+        rate_catalog_version=catalog.version,
+    )
+
+
 def refresh_usd_per_dbu(spark, catalog: RateCatalog) -> RateCatalog:
     """Update each rate's ``usd_per_dbu`` from ``system.billing.list_prices`` (in-workspace).
 

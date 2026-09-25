@@ -24,8 +24,8 @@
 # NOTE: relative comparisons across batch_size / concurrency on the SAME compute are exact
 # regardless of rate precision; only cross-compute absolute $ depends on dbus_per_hour accuracy.
 # -----------------------------------------------------------------------------
-version: "2026-09-25.1"
-source: "list_prices $/DBU (AWS us-east-1, Enterprise); AI Runtime A10 DBU/hr calibrated against system.billing.usage; serving DBU/hr still Databricks-published"
+version: "2026-09-25.2"
+source: "list_prices $/DBU (AWS us-east-1, Enterprise); A10 serving endpoint (20 DBU/hr), AI Runtime A10 (3.6 DBU/hr), and orchestration (0.75 DBU/hr) all calibrated against system.billing.usage; serving A100/H100 + AI Runtime H100 DBU/hr still Databricks-published/unmeasured"
 
 rates:
   # --- Model Serving (GPU endpoint) — billed as Serverless Real-Time Inference @ $0.07/DBU ---
@@ -33,7 +33,7 @@ rates:
     description: "Model Serving GPU_MEDIUM (1x A10)"
     databricks_sku: "ENTERPRISE_SERVERLESS_REAL_TIME_INFERENCE_US_EAST_N_VIRGINIA"
     usd_per_dbu: 0.070
-    dbus_per_hour: 20.0        # verify: docs (serve-custom-llms)
+    dbus_per_hour: 20.0        # MEASURED: whisper_bench_a10 endpoint billed 104.74 DBUs / 5.24h = 20.0 (docs confirmed)
   serving_gpu_large:
     description: "Model Serving GPU_LARGE (1x A100 80GB)"
     databricks_sku: "ENTERPRISE_SERVERLESS_REAL_TIME_INFERENCE_US_EAST_N_VIRGINIA"
@@ -64,8 +64,11 @@ rates:
     dbus_per_hour: 10.0        # verify: UNMEASURED (never ran H100) — placeholder, calibrate before use
 
   # --- Orchestration / driver job for the serving arm (issues the concurrent requests) ---
+  # CALIBRATED (2026-09-25): full run_serving task billed 1.50 DBUs over 2.0 task-wall-h = 0.75
+  # DBU/hr (JOBS product, ENTERPRISE_JOBS_SERVERLESS_COMPUTE_US_EAST_N_VIRGINIA @ $0.45). A mostly
+  # network-blocked single driver is nearly free — the prior 2.0 guess overcounted serving cost ~2.6x.
   orchestration_serverless_jobs:
     description: "Serverless Jobs compute driving serving requests (single lightweight task)"
     databricks_sku: "ENTERPRISE_JOBS_SERVERLESS_COMPUTE_US_EAST_N_VIRGINIA"
-    usd_per_dbu: 0.450
-    dbus_per_hour: 2.0         # verify: serverless jobs DBU/hr for a minimal driver (calibrate)
+    usd_per_dbu: 0.450         # measured: list_prices effective_list
+    dbus_per_hour: 0.75        # measured: full run_serving task (1.50 DBUs / 2.0h)

@@ -33,8 +33,29 @@ def test_catalog_matches_known_rates():
     assert cat.usd_per_hour("serverless_gpu_a10") == pytest.approx(2.34)
     # serverless GPU H100 = 10.0 * $0.65 = $6.50/hr (H100 DBU/hr still a placeholder)
     assert cat.usd_per_hour("serverless_gpu_h100") == pytest.approx(6.50)
+    # orchestration (calibrated) = 0.75 DBU/hr * $0.45 = $0.3375/hr
+    assert cat.usd_per_hour("orchestration_serverless_jobs") == pytest.approx(0.3375)
     with pytest.raises(KeyError):
         cat.usd_per_hour("does_not_exist")
+
+
+def test_assemble_costs_ai_runtime_and_serving():
+    from whisper_bench.cost import assemble_costs
+    cat = RateCatalog.load(CONF / "compute_costs.yml")
+
+    # AI Runtime: single compute, no secondary
+    ai = assemble_costs(cat, "serverless_gpu_a10", None, inference_wall_sec=1034.0,
+                        total_audio_sec=19440.0)  # 5.4h audio
+    assert ai.rate_primary_usd_per_hr == pytest.approx(2.34)
+    assert ai.cost_secondary_usd is None
+    assert ai.total_cost_usd == pytest.approx(1034/3600 * 2.34)
+    assert ai.cost_per_audio_hour == pytest.approx(ai.total_cost_usd / 5.4)
+
+    # Serving: primary endpoint + secondary orchestration, both over the inference window
+    sv = assemble_costs(cat, "serving_gpu_medium", "orchestration_serverless_jobs",
+                        inference_wall_sec=2352.0, total_audio_sec=19440.0, replicas=1)
+    assert sv.cost_secondary_usd == pytest.approx(2352/3600 * 0.3375)
+    assert sv.total_cost_usd == pytest.approx(2352/3600 * 1.40 + 2352/3600 * 0.3375)
 
 
 def test_compute_cost_and_cost_per_audio_hour():

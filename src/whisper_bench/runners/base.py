@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from ..config import RunConfig, Suite
-from ..cost import RateCatalog, compute_cost, cost_per_audio_hour
+from ..cost import RateCatalog, assemble_costs
 from ..data import Clip
 from ..metrics import PhaseTimer, compute_accuracy, percentile_ms, rtfx
 from ..results import RunResult
@@ -77,16 +77,14 @@ class Runner(abc.ABC):
         acc = compute_accuracy([c.reference_text for c in clips], hypotheses)
 
         rc = self.run_config
-        primary_rate = self.rate_catalog.usd_per_hour(rc.compute)
-        primary_cost = compute_cost(infer_sec, primary_rate, replicas=self.replicas())
-
-        secondary_rate = secondary_cost = None
-        if rc.orchestration_compute:
-            # The driver job is active for the same inference window as the endpoint.
-            secondary_rate = self.rate_catalog.usd_per_hour(rc.orchestration_compute)
-            secondary_cost = compute_cost(infer_sec, secondary_rate)
-
-        total_cost = primary_cost + (secondary_cost or 0.0)
+        cb = assemble_costs(
+            self.rate_catalog,
+            compute_primary=rc.compute,
+            compute_secondary=rc.orchestration_compute,  # driver job runs over the same inference window
+            inference_wall_sec=infer_sec,
+            total_audio_sec=total_audio,
+            replicas=self.replicas(),
+        )
         run_id = uuid.uuid4().hex
         return RunResult(
             run_id=run_id,
@@ -108,15 +106,15 @@ class Runner(abc.ABC):
             cer=acc.cer,
             wer_normalized=acc.wer_normalized,
             compute_primary=rc.compute,
-            rate_primary_usd_per_hr=primary_rate,
-            cost_primary_usd=primary_cost,
+            rate_primary_usd_per_hr=cb.rate_primary_usd_per_hr,
+            cost_primary_usd=cb.cost_primary_usd,
             compute_secondary=rc.orchestration_compute,
-            rate_secondary_usd_per_hr=secondary_rate,
-            cost_secondary_usd=secondary_cost,
-            total_cost_usd=total_cost,
-            cost_per_audio_hour=cost_per_audio_hour(total_cost, total_audio),
+            rate_secondary_usd_per_hr=cb.rate_secondary_usd_per_hr,
+            cost_secondary_usd=cb.cost_secondary_usd,
+            total_cost_usd=cb.total_cost_usd,
+            cost_per_audio_hour=cb.cost_per_audio_hour,
             replicas=self.replicas(),
-            rate_catalog_version=self.rate_catalog.version,
+            rate_catalog_version=cb.rate_catalog_version,
             notes=self.notes,
             started_at=datetime.now(timezone.utc),
             tags={"benchmark_run_id": run_id, "bench_arm": rc.arm, "bench_config": rc.label or rc.arm},

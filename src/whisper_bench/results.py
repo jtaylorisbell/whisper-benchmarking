@@ -264,6 +264,45 @@ def ensure_rate_catalog_table(spark, suite: Suite, catalog: RateCatalog) -> None
               f"dbus_per_hour*usd_per_dbu (+cloud_usd_per_hour). Source: {catalog.source}'")
 
 
+def recompute_costs(spark, suite: Suite, catalog: RateCatalog) -> int:
+    """Recompute the cost columns of every existing results row against ``catalog`` and write back.
+
+    Costs are re-derived from each row's stored ``inference_wall_sec`` + compute keys + ``replicas``
+    via :func:`assemble_costs` (the same formula live runs use) — no re-running of inference. Use
+    after the rate catalog is calibrated so historical rows reflect the corrected rates. Returns the
+    number of rows updated. Rows whose ``compute_primary`` isn't in the catalog are left untouched.
+    """
+    from .cost import assemble_costs
+
+    if not spark.catalog.tableExists(suite.results_table):
+        return 0
+    pdf = spark.table(suite.results_table).toPandas()
+    updated = 0
+    for _, row in pdf.iterrows():
+        if row["compute_primary"] not in catalog.rates:
+            continue
+        cb = assemble_costs(
+            catalog,
+            compute_primary=row["compute_primary"],
+            compute_secondary=row["compute_secondary"] or None,
+            inference_wall_sec=float(row["inference_wall_sec"]),
+            total_audio_sec=float(row["total_audio_sec"]),
+            replicas=int(row["replicas"] or 1),
+        )
+        sets = (
+            f"rate_primary_usd_per_hr={cb.rate_primary_usd_per_hr}, "
+            f"cost_primary_usd={cb.cost_primary_usd}, "
+            f"rate_secondary_usd_per_hr={'NULL' if cb.rate_secondary_usd_per_hr is None else cb.rate_secondary_usd_per_hr}, "
+            f"cost_secondary_usd={'NULL' if cb.cost_secondary_usd is None else cb.cost_secondary_usd}, "
+            f"total_cost_usd={cb.total_cost_usd}, "
+            f"cost_per_audio_hour={cb.cost_per_audio_hour}, "
+            f"rate_catalog_version={_sql_str(cb.rate_catalog_version)}"
+        )
+        spark.sql(f"UPDATE {suite.results_table} SET {sets} WHERE run_id={_sql_str(row['run_id'])}")
+        updated += 1
+    return updated
+
+
 def create_summary_view(spark, suite: Suite) -> None:
     """Human-readable leaderboard: best price/performance per arm & GPU, accuracy shown for parity."""
     spark.sql(f"""

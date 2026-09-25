@@ -19,6 +19,7 @@ from .results import (
     create_summary_view,
     ensure_rate_catalog_table,
     ingest_results,
+    recompute_costs,
     write_result_json,
 )
 from .runners import make_runner
@@ -62,10 +63,19 @@ def run_suite(
     return results
 
 
-def ingest_and_report(spark, suite: Suite, rate_catalog: RateCatalog) -> int:
-    """Build/refresh the documented Delta tables + summary view from the emitted result JSONs."""
+def ingest_and_report(spark, suite: Suite, rate_catalog: RateCatalog, recompute: bool = True) -> int:
+    """Build/refresh the documented Delta tables + summary view from the emitted result JSONs.
+
+    When ``recompute`` (default), reconciles every existing row's cost columns to ``rate_catalog``
+    so a calibrated catalog retroactively corrects historical rows (they were costed at run time
+    with whatever catalog was then current). Ingested JSONs still carry their run-time cost; the
+    recompute pass then normalizes all rows to the current catalog version.
+    """
     n = ingest_results(spark, suite)
     ensure_rate_catalog_table(spark, suite, rate_catalog)
+    if recompute:
+        updated = recompute_costs(spark, suite, rate_catalog)
+        print(f"Recomputed costs on {updated} row(s) at catalog {rate_catalog.version}")
     create_summary_view(spark, suite)
     print(f"Ingested results; {n} total rows in {suite.results_table}")
     return n
