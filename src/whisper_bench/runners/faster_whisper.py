@@ -23,14 +23,19 @@ from .base import Runner
 
 
 class FasterWhisperRunner(Runner):
-    def _model_id(self) -> str:
-        """faster-whisper model id — explicit override, else derived from the HF name.
-
-        'openai/whisper-large-v3' -> 'large-v3' (faster-whisper downloads the Systran CT2 weights).
+    def _ct2_model_id(self) -> str:
+        """The id passed to faster-whisper's ``WhisperModel`` (a recognized alias, e.g. 'large-v3',
+        'large-v3-turbo'). Uses the explicit ``fw_model`` override, else derives from the HF name:
+        'openai/whisper-large-v3' -> 'large-v3' (faster-whisper downloads the matching CT2 weights).
         """
         if self.run_config.fw_model:
             return self.run_config.fw_model
         return self.suite.model.split("/")[-1].replace("whisper-", "")
+
+    def recorded_model(self) -> str:
+        """Record the actual model run. When fw_model is set (e.g. a turbo run) this differs from the
+        suite model, so turbo and large-v3 land as distinct rows rather than colliding in the summary."""
+        return self.run_config.fw_model or self.suite.model
 
     def setup(self) -> None:
         import ctranslate2
@@ -38,7 +43,7 @@ class FasterWhisperRunner(Runner):
 
         if ctranslate2.get_cuda_device_count() < 1:
             raise RuntimeError("faster-whisper arm requires a GPU but ctranslate2 sees no CUDA device")
-        model_id = self._model_id()
+        model_id = self._ct2_model_id()
         self._model = WhisperModel(model_id, device="cuda", compute_type="float16")
         self.notes = f"engine=faster_whisper({ctranslate2.__version__}); model={model_id}; accelerator={self.run_config.serverless_accelerator}"
 

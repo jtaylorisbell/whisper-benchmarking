@@ -52,6 +52,12 @@ class Runner(abc.ABC):
         """Parallel billable units of the primary compute (endpoint replicas). Usually 1."""
         return 1
 
+    def recorded_model(self) -> str:
+        """The model identity to record for this run. Defaults to the suite model (same-model
+        parity); a runner overrides it when a run uses a different model (e.g. faster-whisper turbo)
+        so distinct models are distinguishable in the results table and summary view."""
+        return self.suite.model
+
     # --- Shared orchestration ---
     def run(self, clips: list[Clip]) -> RunResult:
         timer = PhaseTimer()
@@ -91,7 +97,7 @@ class Runner(abc.ABC):
             suite_id=self.suite_id,
             arm=rc.arm,
             label=rc.label or rc.arm,
-            model=self.suite.model,
+            model=self.recorded_model(),
             gpu_type=rc.gpu_type,
             batch_size=rc.batch_size,
             concurrency=rc.concurrency,

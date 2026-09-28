@@ -308,7 +308,7 @@ def create_summary_view(spark, suite: Suite) -> None:
     spark.sql(f"""
         CREATE OR REPLACE VIEW {suite.summary_view} AS
         SELECT
-          arm, gpu_type, batch_size, concurrency, n_clips,
+          arm, model, gpu_type, batch_size, concurrency, n_clips,
           round(total_audio_sec/3600.0, 2) AS audio_hours,
           round(inference_wall_sec, 1)      AS inference_sec,
           round(throughput_rtfx, 1)         AS rtfx,
@@ -319,12 +319,13 @@ def create_summary_view(spark, suite: Suite) -> None:
           label, started_at
         FROM {suite.results_table}
         QUALIFY row_number() OVER (
-            PARTITION BY arm, gpu_type, batch_size, concurrency ORDER BY started_at DESC
+            PARTITION BY arm, model, gpu_type, batch_size, concurrency ORDER BY started_at DESC
         ) = 1
         ORDER BY usd_per_audio_hour ASC
     """)
     spark.sql(f"COMMENT ON VIEW {suite.summary_view} IS "
-              f"'Leaderboard: latest run per (arm,gpu,batch,concurrency), cheapest $/audio-hour first. "
+              f"'Leaderboard: latest run per (arm,model,gpu,batch,concurrency), cheapest $/audio-hour first. "
+              f"model distinguishes engine/weights variants (e.g. large-v3 vs large-v3-turbo). "
               f"WER/CER shown so cross-arm accuracy parity is visible at a glance.'")
 
 

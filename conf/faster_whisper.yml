@@ -1,11 +1,15 @@
-# faster-whisper (CTranslate2) engine on AI Runtime serverless GPU — same weights (large-v3),
-# same dataset, same A10 as the HF-pipeline arm. Isolates the engine as a throughput lever.
+# faster-whisper (CTranslate2) engine on AI Runtime serverless GPU. Same dataset + A10 as the other
+# arms. Two runs, back-to-back in one job for a clean same-session comparison:
+#   1. large-v3        — SAME weights as the HF/serving arms; isolates the engine as a throughput lever.
+#   2. large-v3-turbo  — a DIFFERENT (distilled) model. This BREAKS same-model parity, so it's an
+#      accuracy-vs-cost tradeoff study, not apples-to-apples. Recorded under its own model id
+#      (large-v3-turbo) so it lands as a distinct row; expect higher RTFx at a higher WER.
 # Sequential transcription (the probe-proven path); cross-clip batching left as future headroom.
 catalog: classic_stable_h0vpq7_catalog
 schema: whisper_bench
 volume: audio
 model: openai/whisper-large-v3
-rate_catalog_version: "2026-09-23.1"
+rate_catalog_version: "2026-09-25.2"
 warmup_clips: 5
 
 dataset:
@@ -13,7 +17,8 @@ dataset:
   hf_dataset: openslr/librispeech_asr
   hf_config: clean
   hf_split: test
-  # limit: null -> full ~2,620 clips / ~5.4 hrs (set a limit for a capped validation pass)
+  # limit: null -> full ~2,620 clips / ~5.4 hrs (capped validation pass complete: turbo downloads + distinct rows confirmed)
 
 runs:
   - {arm: ai_runtime, engine: faster_whisper, gpu_type: A10, batch_size: 1, serverless_accelerator: GPU_1xA10, compute: serverless_gpu_a10}
+  - {arm: ai_runtime, engine: faster_whisper, gpu_type: A10, batch_size: 1, serverless_accelerator: GPU_1xA10, compute: serverless_gpu_a10, fw_model: large-v3-turbo, label: ai_runtime-fw-turbo-A10-bs1}

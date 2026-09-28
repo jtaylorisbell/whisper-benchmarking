@@ -61,9 +61,30 @@ def test_labels_autoderive():
 
 def test_faster_whisper_config_loads():
     suite = load_suite(CONF / "faster_whisper.yml")
-    assert len(suite.runs) == 1
-    r = suite.runs[0]
-    assert r.arm == ARM_AI_RUNTIME and r.engine == "faster_whisper"
+    # large-v3 (parity) + large-v3-turbo (tradeoff study), both faster_whisper
+    assert len(suite.runs) == 2
+    assert all(r.arm == ARM_AI_RUNTIME and r.engine == "faster_whisper" for r in suite.runs)
+    large_v3, turbo = suite.runs
+    assert large_v3.fw_model is None
+    assert turbo.fw_model == "large-v3-turbo"
+    # distinct labels so they don't collide in the summary view
+    assert large_v3.label != turbo.label
+    assert turbo.label == "ai_runtime-fw-turbo-A10-bs1"
+
+
+def test_faster_whisper_runner_records_distinct_model():
+    """The fw runner records the turbo model id (not the suite model), so turbo lands as a distinct
+    row. Uses __new__ to exercise recorded_model() without a workspace."""
+    from whisper_bench.config import Suite, DatasetConfig
+    from whisper_bench.runners.faster_whisper import FasterWhisperRunner
+
+    suite = load_suite(CONF / "faster_whisper.yml")
+    large_v3, turbo = suite.runs
+    for rc, expected in [(large_v3, "openai/whisper-large-v3"), (turbo, "large-v3-turbo")]:
+        r = FasterWhisperRunner.__new__(FasterWhisperRunner)
+        r.suite = suite
+        r.run_config = rc
+        assert r.recorded_model() == expected
 
 
 def test_bad_configs_raise():
