@@ -32,7 +32,8 @@ runs:
   # basis is a clean single A10 directly comparable to the AI Runtime rows above.
   # Lever = CONCURRENCY (parallel single-clip requests). batch_size stays 1: the whisper_large_v3
   # endpoint returns one transcription per request — packing multiple clips into one request collapses
-  # to a single result (verified), so client-side batching isn't usable. Concurrency held <= 4 (one
+  # to a single result (verified; re-confirmed 2026-10-07 via conf/serving_batch.yml — an 8-clip
+  # request returned 1 transcript), so client-side batching isn't usable. Concurrency held <= 4 (one
   # replica serves up to 4 concurrent; >4 would need more replicas = more GPUs = a scale-out study).
   - {arm: serving, gpu_type: A10, batch_size: 1, concurrency: 1, endpoint_name: whisper_bench_a10, workload_type: GPU_MEDIUM, workload_size: Small, compute: serving_gpu_medium, orchestration_compute: orchestration_serverless_jobs}   # single-stream baseline (ai_query-style)
   - {arm: serving, gpu_type: A10, batch_size: 1, concurrency: 2, endpoint_name: whisper_bench_a10, workload_type: GPU_MEDIUM, workload_size: Small, compute: serving_gpu_medium, orchestration_compute: orchestration_serverless_jobs}

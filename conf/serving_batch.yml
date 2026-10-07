@@ -1,0 +1,36 @@
+# Serving batch-size investigation. The committed serving rows all ran batch_size=1 (clips per
+# request); only CONCURRENCY was swept. conf/full_sweep.yml claimed request-batching "collapses to a
+# single result (verified)", while conf/smoke.yml claimed the "signature accepts an array" — a direct
+# contradiction, and no bs>1 serving row was ever landed. This config settled it empirically.
+#
+# RESULT (2026-10-07): full_sweep was RIGHT, smoke was WRONG. The bs8 run failed immediately with
+#   "expected 8 transcriptions in response, got 1: {'predictions': ['He hoped there would be stew...']}"
+# i.e. an 8-clip request returned ONE transcript (just the first clip). Request-level batching is
+# genuinely unusable on system.ai.whisper_large_v3; bs1 + a concurrency sweep was the correct and
+# ONLY valid approach for the serving arm. (Run capped/cancelled once proven; endpoint torn down.)
+#
+# Design: ONE endpoint (single A10, GPU_MEDIUM/Small = 1 replica), concurrency fixed at 4, batch_size
+# swept 1 -> 8 -> 16 on the FULL LibriSpeech set. The bs1@c4 run is an in-session CONTROL (should
+# reproduce the landed ~8.3 RTFx); any bs8/bs16 gain is then attributable to request-batching alone.
+# serving.py already supports bs>1 (sends {"inputs":[clip,...]} and REQUIRES N transcripts back,
+# raising if it gets fewer) — so if the endpoint really collapses a batch, bs8 fails loudly here.
+catalog: classic_stable_h0vpq7_catalog
+schema: whisper_bench
+volume: audio
+model: openai/whisper-large-v3
+rate_catalog_version: "2026-09-25.2"
+warmup_clips: 5
+
+dataset:
+  name: librispeech_test_clean
+  hf_dataset: openslr/librispeech_asr
+  hf_config: clean
+  hf_split: test
+  limit: 1000   # COST CAP. RTFx is a rate (clip-count-independent past warmup), so 1,000 clips give
+                # the same throughput answer as the full 2,620 at ~40% the endpoint time, and stay
+                # comparable to the landed full-set bs1 rows. The in-session bs1@c4 control confirms it.
+
+runs:
+  - {arm: serving, gpu_type: A10, batch_size: 1,  concurrency: 4, endpoint_name: whisper_bench_a10, workload_type: GPU_MEDIUM, workload_size: Small, compute: serving_gpu_medium, orchestration_compute: orchestration_serverless_jobs, label: serving-batch-c4-bs1}
+  - {arm: serving, gpu_type: A10, batch_size: 8,  concurrency: 4, endpoint_name: whisper_bench_a10, workload_type: GPU_MEDIUM, workload_size: Small, compute: serving_gpu_medium, orchestration_compute: orchestration_serverless_jobs, label: serving-batch-c4-bs8}
+  - {arm: serving, gpu_type: A10, batch_size: 16, concurrency: 4, endpoint_name: whisper_bench_a10, workload_type: GPU_MEDIUM, workload_size: Small, compute: serving_gpu_medium, orchestration_compute: orchestration_serverless_jobs, label: serving-batch-c4-bs16}

@@ -2,24 +2,29 @@
 
 We drive the endpoint with an explicit thread pool (rather than ``ai_query``) so we can set the
 number of parallel in-flight requests precisely and measure per-request latency. Each request
-carries ``batch_size`` clips.
+carries ``batch_size`` clips — but ``batch_size`` is pinned to 1 for this endpoint (see the schema
+note below); CONCURRENCY is the only usable throughput lever.
 
 REPLICAS / COST: for GPU endpoints Databricks provisions ``replicas = provisioned_concurrency / 4``,
 and each replica is a full GPU (one A10 for GPU_MEDIUM). This benchmark's price/performance study
 runs at **one replica** (``workload_size: Small`` = provisioned concurrency 4), so client
 concurrency is kept <= 4 (beyond that would only queue on the single GPU, not add hardware). Cost is
 charged as ``replicas * per-GPU-rate`` via :meth:`replicas`, so it stays correct if a larger
-workload size (more replicas / GPUs) is ever used. The throughput lever we sweep here is therefore
-client ``batch_size`` (clips per request), the direct analog of the AI Runtime batch size.
+workload size (more replicas / GPUs) is ever used. The throughput lever is therefore CONCURRENCY
+(parallel single-clip requests), NOT batch size — see the schema note.
 
 REQUEST/RESPONSE SCHEMA (confirmed from the model's MLflow signature, system.ai.whisper_large_v3 v3):
   inputs  = a single unnamed binary column (raw audio bytes)
   outputs = string (the transcript)
 Over REST/JSON, MLflow base64-encodes binary column values, so the request is
 ``{"inputs": ["<base64 audio>", ...]}`` and the response is ``{"predictions": ["<text>", ...]}``.
-Multiple clips per request (batch_size > 1) map to multiple rows of that column. Payload
-construction and response parsing are still isolated in ``_build_payload`` / ``_parse_response`` so
-any endpoint-specific quirk is a one-method change.
+In principle multiple clips per request would map to multiple rows — but EMPIRICALLY this endpoint
+COLLAPSES a multi-clip request to a SINGLE result (it transcribes only the first clip): an 8-clip
+request returned one prediction (confirmed 2026-10-07; see conf/serving_batch.yml). So client-side
+batching is unusable and ``batch_size`` is pinned to 1. ``_parse_response`` enforces this by
+requiring N transcripts for an N-clip request and raising otherwise — which is exactly how the
+collapse was caught. Payload construction / parsing stay isolated in ``_build_payload`` /
+``_parse_response`` so any endpoint-specific quirk is a one-method change.
 """
 
 from __future__ import annotations

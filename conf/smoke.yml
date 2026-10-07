@@ -25,11 +25,13 @@ runs:
     compute: serverless_gpu_a10
 
   # --- Model Serving arm: GPU_MEDIUM (A10) endpoint from system.ai.whisper_large_v3.
-  #     Single replica (Small = provisioned concurrency 4). batch_size = clips per request (the
-  #     swept lever); client concurrency <= 4 (one replica serves up to 4 concurrent).
+  #     Single replica (Small = provisioned concurrency 4). batch_size MUST be 1: the endpoint
+  #     collapses a multi-clip request to a SINGLE result (it transcribes only the first clip) —
+  #     empirically confirmed, see conf/serving_batch.yml. So clips-per-request batching is unusable;
+  #     CONCURRENCY (<=4, one replica serves 4 concurrent) is the only usable throughput lever.
   - arm: serving
     gpu_type: A10
-    batch_size: 8                 # clips per request (confirmed: signature accepts an array)
+    batch_size: 1                 # endpoint returns one transcript per request regardless; see above
     concurrency: 4
     endpoint_name: whisper_bench_a10
     workload_type: GPU_MEDIUM
