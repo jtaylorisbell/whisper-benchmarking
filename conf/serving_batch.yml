@@ -5,9 +5,11 @@
 #
 # RESULT (2026-10-07): full_sweep was RIGHT, smoke was WRONG. The bs8 run failed immediately with
 #   "expected 8 transcriptions in response, got 1: {'predictions': ['He hoped there would be stew...']}"
-# i.e. an 8-clip request returned ONE transcript (just the first clip). Request-level batching is
-# genuinely unusable on system.ai.whisper_large_v3; bs1 + a concurrency sweep was the correct and
-# ONLY valid approach for the serving arm. (Run capped/cancelled once proven; endpoint torn down.)
+# i.e. an 8-clip request returned ONE transcript (just the first clip). The response was a CLEAN first-clip
+# transcript — pointing to a non-batch-aware server wrapper, not a payload artifact (tested the default
+# `inputs` payload; `dataframe_split` not separately tried). Either way request-level batching is unusable
+# on system.ai.whisper_large_v3; bs1 + a concurrency sweep was the correct and ONLY valid serving approach.
+# (Run capped/cancelled once proven; endpoint torn down.)
 #
 # Design: ONE endpoint (single A10, GPU_MEDIUM/Small = 1 replica), concurrency fixed at 4, batch_size
 # swept 1 -> 8 -> 16 on the FULL LibriSpeech set. The bs1@c4 run is an in-session CONTROL (should

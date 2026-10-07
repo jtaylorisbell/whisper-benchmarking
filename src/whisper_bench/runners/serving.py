@@ -20,8 +20,10 @@ Over REST/JSON, MLflow base64-encodes binary column values, so the request is
 ``{"inputs": ["<base64 audio>", ...]}`` and the response is ``{"predictions": ["<text>", ...]}``.
 In principle multiple clips per request would map to multiple rows — but EMPIRICALLY this endpoint
 COLLAPSES a multi-clip request to a SINGLE result (it transcribes only the first clip): an 8-clip
-request returned one prediction (confirmed 2026-10-07; see conf/serving_batch.yml). So client-side
-batching is unusable and ``batch_size`` is pinned to 1. ``_parse_response`` enforces this by
+request returned one prediction (confirmed 2026-10-07; see conf/serving_batch.yml). The response was a
+*clean* first-clip transcript, which points to a non-batch-aware server wrapper rather than a payload
+artifact (tested the default ``inputs`` payload; ``dataframe_split`` was not separately tried). Either
+way client-side batching is unusable here, so ``batch_size`` is pinned to 1. ``_parse_response`` enforces this by
 requiring N transcripts for an N-clip request and raising otherwise — which is exactly how the
 collapse was caught. Payload construction / parsing stay isolated in ``_build_payload`` /
 ``_parse_response`` so any endpoint-specific quirk is a one-method change.

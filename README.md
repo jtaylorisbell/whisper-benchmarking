@@ -64,7 +64,8 @@ Two different ways to run a GPU model on Databricks:
 - **Model Serving** — a persistent **REST endpoint** deployed from a Unity Catalog model
   (`system.ai.whisper_large_v3`). You send audio, it returns transcripts. Great for online/low-latency
   serving; you pay for the endpoint while it's up. Here it's billed as *Serverless Real-Time Inference*.
-  For batch, the lever is **concurrency** — how many requests you keep in flight against a replica.
+  For batch, the **only** lever is **concurrency** — how many requests you keep in flight; this endpoint
+  can't pack multiple clips into one request ([why](#model-serving-batches-by-concurrency-not-by-request)).
 - **AI Runtime (serverless GPU)** — a **batch job** that runs your own Python on a serverless GPU
   accelerator (`GPU_1xA10`, `GPU_1xH100`), driven by a Databricks Asset Bundle `ai_runtime_task`. No Spark,
   no endpoint — just your script on a GPU, reading files and writing results. Built for exactly this kind
@@ -72,6 +73,32 @@ Two different ways to run a GPU model on Databricks:
 
 For **batch** transcription, AI Runtime wins here: you control the inference engine and batching, and it
 saturates the GPU better than single-request serving.
+
+### Model Serving batches by concurrency, not by request
+
+The AI Runtime arm has two throughput knobs — **concurrency** and **batch** (clips processed together per
+call). The Model Serving arm effectively has **only concurrency**: the `system.ai.whisper_large_v3` endpoint
+**cannot pack multiple clips into one request.**
+
+Confirmed empirically ([`conf/serving_batch.yml`](conf/serving_batch.yml)): a single request carrying 8
+clips came back with **one** prediction — the clean transcript of only the *first* clip — which tripped the
+harness's "N clips in ⇒ N transcripts out" guard:
+
+```
+RuntimeError: expected 8 transcriptions in response, got 1:
+{'predictions': ['He hoped there would be stew for dinner, turnips and carrots ...']}
+```
+
+Because it returned one **pristine** transcript (not an error, not garbled audio from 8 blobs mashed
+together), the cause is almost certainly a **server-side model wrapper that isn't batch-aware** — it
+transcribes only the first row and drops the rest. (We tested the standard MLflow `inputs` payload; we did
+not separately try the `dataframe_split` encoding — but a *clean first-clip* result makes a mere
+payload-encoding artifact unlikely.)
+
+**So the serving arm isn't under-optimized — there's simply no batch lever to pull.** `batch_size` is
+correctly pinned to **1**, and **concurrency** is the only usable lever; it already saturated the single A10
+at ~2 in-flight requests (c2 ≈ c4 ≈ 8.3 RTFx). The AI Runtime arm's engine- and model-level batching is
+exactly why it pulls ahead on `$/audio-hr`.
 
 ### faster-whisper vs the HF pipeline
 
@@ -185,7 +212,9 @@ the hourly rate, is what moves the cost.**
   so concurrency 4 is exactly *one* replica (one A10). Capping the sweep at 4 keeps it a clean single-GPU
   scaling curve; concurrency 8 would be 2 replicas (2 GPUs), doubling the cost basis. It didn't bind in
   practice anyway — the A10 saturated at concurrency ~2 (c2 and c4 both ~8.3 RTFx), so it never used the full
-  4-slot allocation; GPU compute was the limit.
+  4-slot allocation; GPU compute was the limit. Request-level batching isn't an option on this endpoint
+  either (it returns one transcript per request regardless — see [Model Serving batches by concurrency, not
+  by request](#model-serving-batches-by-concurrency-not-by-request)), so `batch_size` is pinned to 1.
 - **Accuracy is per-clip WER** (1:1 hypothesis-vs-reference), after OpenAI's Whisper English normalizer.
 - **AI Runtime serverless GPU is Public Preview** — if a workspace isn't entitled, deploy/run surfaces it.
 
